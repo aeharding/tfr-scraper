@@ -1,5 +1,6 @@
 import cheerio from "cheerio";
 import { fetch } from "undici";
+import { setLastRefreshedDate } from "./lastRefreshed";
 import { client } from "./mongodb";
 
 const faaAPI = "https://external-api.faa.gov/notamapi/v1";
@@ -27,9 +28,14 @@ interface NotamInfo {
 }
 
 async function fetchTFRs(): Promise<NotamInfo[]> {
-  const tfrsText = await (
-    await fetch("https://tfr.faa.gov/tfr2/list.html")
-  ).text();
+  const tfrsResponse = await fetch("https://tfr.faa.gov/tfr2/list.html");
+
+  if (!tfrsResponse.ok)
+    throw new Error(
+      `Scraping tfr.faa.gov failed: Status code ${tfrsResponse.status}`
+    );
+
+  const tfrsText = await tfrsResponse.text();
   const $ = cheerio.load(tfrsText);
 
   let tfrs: NotamInfo[] = [];
@@ -59,6 +65,11 @@ async function fetchTFRs(): Promise<NotamInfo[]> {
     }
   });
 
+  // Smoke test, something on the page is broken, there's always many TFRs
+  if (tfrs.length < 10) {
+    throw new Error("tfr.faa.gov appears to have invalid data");
+  }
+
   return tfrs;
 }
 
@@ -73,6 +84,9 @@ async function getTFRDetail(
     })}`,
     { headers: { client_id, client_secret } }
   );
+
+  if (!tfrRequest.ok)
+    throw new Error(`FAA API seems to be down, got ${tfrRequest.status}`);
 
   const data = (await tfrRequest.json()) as any;
 
@@ -133,6 +147,8 @@ export default async function () {
 
     await collection.insertOne(payload);
   }
+
+  await setLastRefreshedDate();
 
   client.close();
 }

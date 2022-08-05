@@ -1,7 +1,10 @@
 import runScraper from "./scraper";
 import runQuery from "./query";
 
-export async function scraper(event) {
+// Interval between scraper runs
+const REFRESH_TIME_IN_MINUTES = 15;
+
+export async function scraper(): Promise<AWSLambda.APIGatewayProxyResultV2> {
   try {
     await runScraper();
   } catch (error) {
@@ -15,21 +18,18 @@ export async function scraper(event) {
 
   return {
     statusCode: 200,
-    body: JSON.stringify(
-      {
-        message: "Successfully processed TFRs",
-        input: event,
-      },
-      null,
-      2
-    ),
+    body: JSON.stringify({
+      message: "Successfully processed TFRs",
+    }),
   };
 }
 
-export async function query(event) {
-  const lat = +event.queryStringParameters.lat;
-  const lon = +event.queryStringParameters.lon;
-  const radialDistance = +event.queryStringParameters.radialDistance;
+export async function query(
+  event: AWSLambda.APIGatewayEvent
+): Promise<AWSLambda.APIGatewayProxyResultV2> {
+  const lat = Number(event.queryStringParameters?.lat);
+  const lon = Number(event.queryStringParameters?.lon);
+  const radialDistance = Number(event.queryStringParameters?.radialDistance);
 
   if (isNaN(lat) || isNaN(lon) || isNaN(radialDistance)) {
     return {
@@ -37,9 +37,30 @@ export async function query(event) {
     };
   }
 
-  const items = await runQuery({ lat, lon, radialDistance });
+  try {
+    var { items, lastRefreshedDate } = await runQuery({
+      lat,
+      lon,
+      radialDistance,
+    });
+  } catch (error) {
+    console.log(error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Error retrieving TFRs" }),
+    };
+  }
+
+  const expiresDate = lastRefreshedDate
+    ? new Date(lastRefreshedDate.getTime() + 15 * 60000)
+    : new Date(0);
 
   return {
-    items,
+    statusCode: 200,
+    body: JSON.stringify({ items, expiresDate }),
+    headers: {
+      expires: expiresDate.toUTCString(),
+      "content-type": "application/json",
+    },
   };
 }

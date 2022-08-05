@@ -1,17 +1,25 @@
+import { getLastRefreshedDate } from "./lastRefreshed";
 import { client } from "./mongodb";
 import { TFR } from "./scraper";
 
-export default async function query({
-  lat,
-  lon,
-  radialDistance,
-}: {
+interface QueryParams {
   lat: number;
   lon: number;
   radialDistance: number;
-}) {
+}
+
+export default async function query(payload: QueryParams) {
   await client.connect();
 
+  const lastRefreshedDate = await getLastRefreshedDate();
+  const tfrs = await getTfrs(payload);
+
+  client.close();
+
+  return { items: tfrs, lastRefreshedDate };
+}
+
+async function getTfrs({ lat, lon, radialDistance }: QueryParams) {
   const collection = client.db("data").collection<TFR>("tfrs");
 
   const pointer = await collection.find({
@@ -27,9 +35,5 @@ export default async function query({
     },
   });
 
-  const tfrs = await pointer.toArray();
-
-  client.close();
-
-  return tfrs;
+  return await pointer.toArray();
 }

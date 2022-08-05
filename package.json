@@ -8,5 +8,8 @@
     "cheerio": "^1.0.0-rc.12",
     "mongodb": "^4.8.1",
     "undici": "^5.8.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.101"
   }
 }

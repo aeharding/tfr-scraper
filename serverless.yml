@@ -16,10 +16,12 @@ functions:
   scraper:
     handler: handler.scraper
     timeout: 300 # 5 minutes
+    memorySize: 512
     events:
       - schedule: rate(15 minutes)
   query:
     handler: handler.query
+    memorySize: 256
     events:
       - httpApi:
           method: GET
