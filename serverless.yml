@@ -1,0 +1,29 @@
+service: tfr-scraper
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs16.x
+  environment:
+    MONGODB_USER: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_USER}
+    MONGODB_PASSWORD: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_PASSWORD}
+    MONGODB_HOST: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_HOST}
+    FAA_API_CLIENT_ID: ${file(./config.${opt:stage, 'prod'}.json):FAA_API_CLIENT_ID}
+    FAA_API_CLIENT_SECRET: ${file(./config.${opt:stage, 'prod'}.json):FAA_API_CLIENT_SECRET}
+
+functions:
+  scraper:
+    handler: handler.scraper
+    timeout: 300 # 5 minutes
+    events:
+      - schedule: rate(15 minutes)
+  query:
+    handler: handler.query
+    events:
+      - httpApi:
+          method: GET
+          path: /api/tfr
+
+plugins:
+  - serverless-esbuild

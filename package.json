@@ -1,0 +1,12 @@
+{
+  "name": "tfr-scraper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "<2166114+aeharding@users.noreply.github.com>",
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "mongodb": "^4.8.1",
+    "undici": "^5.8.1"
+  }
+}
