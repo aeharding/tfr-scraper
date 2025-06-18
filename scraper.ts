@@ -1,5 +1,3 @@
-import cheerio from "cheerio";
-import { fetch } from "undici";
 import { setLastRefreshedDate } from "./lastRefreshed";
 import { client } from "./mongodb";
 
@@ -28,44 +26,21 @@ interface NotamInfo {
 }
 
 async function fetchTFRs(): Promise<NotamInfo[]> {
-  const tfrsResponse = await fetch("https://tfr.faa.gov/tfr2/list.html");
+  const tfrsResponse = await fetch("https://tfr.faa.gov/tfrapi/exportTfrList");
 
   if (!tfrsResponse.ok)
     throw new Error(
-      `Scraping tfr.faa.gov failed: Status code ${tfrsResponse.status}`
+      `Scraping tfr.faa.gov failed: Status code ${tfrsResponse.status}`,
     );
 
-  const tfrsText = await tfrsResponse.text();
-  const $ = cheerio.load(tfrsText);
+  const json = await tfrsResponse.json();
 
-  let tfrs: NotamInfo[] = [];
+  let tfrs: NotamInfo[] = json.map((item: any) => ({
+    notamNumber: item.notam_id,
+    domesticLocation: item.facility,
+  }));
 
-  $("table td > a").each((i, link) => {
-    if (
-      link.attribs["href"] &&
-      link.attribs["href"].match(/save_pages/) &&
-      /^\d\/\d{4}$/.test($(link).text().trim())
-    ) {
-      let domesticLocation: string | undefined;
-      $(link.parentNode?.parentNode!)
-        .children()
-        .each((_, td) => {
-          if (domesticLocation) return;
-
-          if (/^[A-Z]{3}$/.test($(td).text().trim())) {
-            domesticLocation = $(td).text().trim();
-          }
-        });
-
-      if (!domesticLocation) return;
-      tfrs.push({
-        notamNumber: $(link).text(),
-        domesticLocation,
-      });
-    }
-  });
-
-  // Smoke test, something on the page is broken, there's always many TFRs
+  // Smoke test, something in the payload is broken, there's always many TFRs
   if (tfrs.length < 10) {
     throw new Error("tfr.faa.gov appears to have invalid data");
   }
@@ -75,14 +50,14 @@ async function fetchTFRs(): Promise<NotamInfo[]> {
 
 async function getTFRDetail(
   notamNumber: string,
-  domesticLocation: string
+  domesticLocation: string,
 ): Promise<TFR> {
   const tfrRequest = await fetch(
     `${faaAPI}/notams?${new URLSearchParams({
       notamNumber,
       domesticLocation,
     })}`,
-    { headers: { client_id, client_secret } }
+    { headers: { client_id, client_secret } },
   );
 
   if (!tfrRequest.ok)
@@ -106,7 +81,7 @@ export default async function () {
       "properties.coreNOTAMData.notam.number": 1,
       "properties.coreNOTAMData.notam.accountId": 1,
     },
-    { unique: true }
+    { unique: true },
   );
 
   await collection.deleteMany({
@@ -121,7 +96,7 @@ export default async function () {
         $in: notams.map(({ notamNumber }) => notamNumber),
       },
     },
-    { projection: { "properties.coreNOTAMData.notam.number": true } }
+    { projection: { "properties.coreNOTAMData.notam.number": true } },
   );
 
   const alreadyInserted = await (
@@ -129,7 +104,7 @@ export default async function () {
   ).map((ret) => ret.properties.coreNOTAMData.notam.number);
 
   const needsInsertion = notams.filter(
-    ({ notamNumber }) => !alreadyInserted.includes(notamNumber)
+    ({ notamNumber }) => !alreadyInserted.includes(notamNumber),
   );
 
   for (const { notamNumber, domesticLocation } of needsInsertion) {

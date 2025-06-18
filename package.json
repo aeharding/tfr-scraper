@@ -5,11 +5,11 @@
   "author": "<2166114+aeharding@users.noreply.github.com>",
   "license": "MIT",
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
-    "mongodb": "^4.8.1",
-    "undici": "^5.8.1"
+    "mongodb": "^4.8.1"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.101"
-  }
+    "@types/aws-lambda": "^8.10.101",
+    "serverless-esbuild": "^1.55.1"
+  },
+  "packageManager": "yarn@1.22.19+sha1.4ba7fc5c6e704fce2066ecbfb0b0d8976fe62447"
 }
