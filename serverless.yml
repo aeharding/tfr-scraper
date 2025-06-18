@@ -4,7 +4,7 @@ frameworkVersion: "3"
 
 provider:
   name: aws
-  runtime: nodejs16.x
+  runtime: nodejs20.x
   environment:
     MONGODB_USER: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_USER}
     MONGODB_PASSWORD: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_PASSWORD}
