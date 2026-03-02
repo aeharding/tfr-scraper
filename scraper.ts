@@ -1,6 +1,9 @@
 import { setLastRefreshedDate } from "./lastRefreshed";
 import { client } from "./mongodb";
 
+const TFR_WFS_URL =
+  "https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=300&outputFormat=application/json";
+
 const faaAPI = "https://external-api.faa.gov/notamapi/v1";
 const client_id = process.env.FAA_API_CLIENT_ID || "";
 const client_secret = process.env.FAA_API_CLIENT_SECRET || "";
@@ -17,35 +20,68 @@ export interface TFR {
   };
   geometry?: {
     type: string;
+    coordinates?: number[][][] | number[][][][];
   };
+}
+
+interface WFSGeometry {
+  type: string;
+  coordinates: number[][][] | number[][][][];
 }
 
 interface NotamInfo {
   notamNumber: string;
   domesticLocation: string;
+  geometries: WFSGeometry[];
 }
 
 async function fetchTFRs(): Promise<NotamInfo[]> {
-  const tfrsResponse = await fetch("https://tfr.faa.gov/tfrapi/exportTfrList");
+  const response = await fetch(TFR_WFS_URL);
 
-  if (!tfrsResponse.ok)
+  if (!response.ok)
     throw new Error(
-      `Scraping tfr.faa.gov failed: Status code ${tfrsResponse.status}`,
+      `Fetching TFR GeoJSON failed: Status code ${response.status}`,
     );
 
-  const json = await tfrsResponse.json();
+  const data = await response.json();
 
-  let tfrs: NotamInfo[] = json.map((item: any) => ({
-    notamNumber: item.notam_id,
-    domesticLocation: item.facility,
-  }));
+  const byNotam = new Map<string, NotamInfo>();
 
-  // Smoke test, something in the payload is broken, there's always many TFRs
-  if (tfrs.length < 10) {
-    throw new Error("tfr.faa.gov appears to have invalid data");
+  for (const feature of data.features) {
+    const notamNumber = feature.properties.NOTAM_KEY.split("-")[0];
+    const domesticLocation = feature.properties.CNS_LOCATION_ID;
+
+    if (!byNotam.has(notamNumber)) {
+      byNotam.set(notamNumber, {
+        notamNumber,
+        domesticLocation,
+        geometries: [],
+      });
+    }
+
+    if (feature.geometry) {
+      byNotam.get(notamNumber)!.geometries.push(feature.geometry);
+    }
   }
 
-  return tfrs;
+  const notams = Array.from(byNotam.values());
+
+  // Smoke test, something in the payload is broken, there's always many TFRs
+  if (notams.length < 10) {
+    throw new Error("TFR WFS endpoint appears to have invalid data");
+  }
+
+  return notams;
+}
+
+function buildGeometry(geometries: WFSGeometry[]): TFR["geometry"] {
+  if (geometries.length === 0) return undefined;
+  if (geometries.length === 1) return geometries[0];
+
+  return {
+    type: "MultiPolygon",
+    coordinates: geometries.map((g) => g.coordinates) as number[][][][],
+  };
 }
 
 async function getTFRDetail(
@@ -99,15 +135,15 @@ export default async function () {
     { projection: { "properties.coreNOTAMData.notam.number": true } },
   );
 
-  const alreadyInserted = await (
-    await alreadyInsertedCursor.toArray()
-  ).map((ret) => ret.properties.coreNOTAMData.notam.number);
+  const alreadyInserted = (await alreadyInsertedCursor.toArray()).map(
+    (ret) => ret.properties.coreNOTAMData.notam.number,
+  );
 
   const needsInsertion = notams.filter(
     ({ notamNumber }) => !alreadyInserted.includes(notamNumber),
   );
 
-  for (const { notamNumber, domesticLocation } of needsInsertion) {
+  for (const { notamNumber, domesticLocation, geometries } of needsInsertion) {
     const payload = await getTFRDetail(notamNumber, domesticLocation);
 
     if (!payload) {
@@ -115,8 +151,11 @@ export default async function () {
       continue;
     }
 
-    // Sometimes we're provided data with invalid collections
-    if (payload.geometry && Object.keys(payload.geometry).length <= 1) {
+    // Use geometry from WFS endpoint instead of NOTAM API
+    const geometry = buildGeometry(geometries);
+    if (geometry) {
+      payload.geometry = geometry;
+    } else {
       delete payload.geometry;
     }
 
