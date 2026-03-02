@@ -9,7 +9,9 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.101",
-    "serverless-esbuild": "^1.55.1"
+    "esbuild": "^0.25.1",
+    "serverless": "3",
+    "serverless-esbuild": "^1.57.0"
   },
   "packageManager": "yarn@1.22.19+sha1.4ba7fc5c6e704fce2066ecbfb0b0d8976fe62447"
 }
