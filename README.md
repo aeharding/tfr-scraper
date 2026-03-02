@@ -1,72 +1,68 @@
-<!--
-title: 'AWS NodeJS Example'
-description: 'This template demonstrates how to deploy a NodeJS function running on AWS Lambda using the traditional Serverless Framework.'
-layout: Doc
-framework: v3
-platform: AWS
-language: nodeJS
-priority: 1
-authorLink: 'https://github.com/serverless'
-authorName: 'Serverless, inc.'
-authorAvatar: 'https://avatars1.githubusercontent.com/u/13742415?s=200&v=4'
--->
+# tfr-scraper
 
+AWS Lambda service that scrapes FAA Temporary Flight Restrictions (TFRs) and stores them in MongoDB for geo-querying.
 
-# Serverless Framework AWS NodeJS Example
+## Architecture
 
-This template demonstrates how to deploy a NodeJS function running on AWS Lambda using the traditional Serverless Framework. The deployed function does not include any event definitions as well as any kind of persistence (database). For more advanced configurations check out the [examples repo](https://github.com/serverless/examples/) which includes integrations with SQS, DynamoDB or examples of functions that are triggered in `cron`-like manner. For details about configuration of specific `events`, please refer to our [documentation](https://www.serverless.com/framework/docs/providers/aws/events/).
+Two Lambda functions deployed via Serverless Framework:
 
-## Usage
+- **scraper** -- Runs every 15 minutes. Fetches the current TFR list and geometry from the [FAA WFS GeoJSON endpoint](https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=300&outputFormat=application/json), then retrieves detailed NOTAM data from the FAA NOTAM API. Results are stored in MongoDB with a 2dsphere index.
+- **query** -- `GET /api/tfr?lat=...&lon=...&radialDistance=...` returns TFRs within the given radius (meters).
 
-### Deployment
+## Prerequisites
 
-In order to deploy the example, you need to run the following command:
+- Node.js 24+
+- [Serverless Framework v3](https://www.serverless.com/framework/docs/getting-started)
+- AWS CLI configured with credentials (`aws configure`)
+- A MongoDB Atlas cluster
+- FAA NOTAM API credentials ([register here](https://api.faa.gov/s/))
 
-```
-$ serverless deploy
-```
+## Setup
 
-After running deploy, you should see output similar to:
+### 1. Install dependencies
 
 ```bash
-Deploying aws-node-project to stage dev (us-east-1)
-
-✔ Service deployed to stack aws-node-project-dev (112s)
-
-functions:
-  hello: aws-node-project-dev-hello (1.5 kB)
+yarn install
 ```
 
-### Invocation
+### 2. Create config file
 
-After successful deployment, you can invoke the deployed function by using the following command:
-
-```bash
-serverless invoke --function hello
-```
-
-Which should result in response similar to the following:
+Create a `config.prod.json` in the project root (gitignored):
 
 ```json
 {
-    "statusCode": 200,
-    "body": "{\n  \"message\": \"Go Serverless v3.0! Your function executed successfully!\",\n  \"input\": {}\n}"
+  "MONGODB_USER": "your-mongodb-user",
+  "MONGODB_PASSWORD": "your-mongodb-password",
+  "MONGODB_HOST": "your-cluster.mongodb.net",
+  "FAA_API_CLIENT_ID": "your-faa-client-id",
+  "FAA_API_CLIENT_SECRET": "your-faa-client-secret"
 }
 ```
 
-### Local development
+For other stages, create `config.<stage>.json` (e.g. `config.dev.json`).
 
-You can invoke your function locally by using the following command:
+## Deployment
 
 ```bash
-serverless invoke local --function hello
+npx serverless deploy --stage prod
 ```
 
-Which should result in response similar to the following:
+To deploy to a different stage:
 
+```bash
+npx serverless deploy --stage dev
 ```
-{
-    "statusCode": 200,
-    "body": "{\n  \"message\": \"Go Serverless v3.0! Your function executed successfully!\",\n  \"input\": \"\"\n}"
-}
+
+## Invoking manually
+
+Trigger the scraper on-demand:
+
+```bash
+npx serverless invoke --function scraper --stage prod
+```
+
+Test the query endpoint:
+
+```bash
+curl "https://<api-id>.execute-api.us-east-1.amazonaws.com/api/tfr?lat=38.85&lon=-77.04&radialDistance=50000"
 ```
