@@ -6,7 +6,7 @@ AWS Lambda service that scrapes FAA Temporary Flight Restrictions (TFRs) and sto
 
 Two Lambda functions deployed via Serverless Framework:
 
-- **scraper** -- Runs every 15 minutes. Fetches the current TFR list and geometry from the [FAA WFS GeoJSON endpoint](https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=300&outputFormat=application/json), then retrieves detailed NOTAM data from the FAA NOTAM API. Results are stored in MongoDB with a 2dsphere index.
+- **scraper** -- Runs every 15 minutes. Fetches the current TFR list and geometry from the [FAA WFS GeoJSON endpoint](https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=300&outputFormat=application/json), then retrieves detailed NOTAM data from the [FAA NMS-API](https://api-nms.aim.faa.gov/nmsapi/v1). Results are stored in MongoDB with a 2dsphere index.
 - **query** -- `GET /api/tfr?lat=...&lon=...&radialDistance=...` returns TFRs within the given radius (meters).
 
 ## Prerequisites
@@ -15,7 +15,7 @@ Two Lambda functions deployed via Serverless Framework:
 - [Serverless Framework v3](https://www.serverless.com/framework/docs/getting-started)
 - AWS CLI configured with credentials (`aws configure`)
 - A MongoDB Atlas cluster
-- FAA NOTAM API credentials ([register here](https://api.faa.gov/s/))
+- FAA NMS-API credentials (email [7-AWA-NAIMES@faa.gov](mailto:7-AWA-NAIMES@faa.gov) to request access)
 
 ## Setup
 
@@ -34,8 +34,9 @@ Create a `config.prod.json` in the project root (gitignored):
   "MONGODB_USER": "your-mongodb-user",
   "MONGODB_PASSWORD": "your-mongodb-password",
   "MONGODB_HOST": "your-cluster.mongodb.net",
-  "FAA_API_CLIENT_ID": "your-faa-client-id",
-  "FAA_API_CLIENT_SECRET": "your-faa-client-secret"
+  "NMS_API_HOST": "https://api-nms.aim.faa.gov",
+  "NMS_API_KEY": "your-nms-api-key",
+  "NMS_API_SECRET": "your-nms-api-secret"
 }
 ```
 
