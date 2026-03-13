@@ -5,6 +5,7 @@
   "author": "<2166114+aeharding@users.noreply.github.com>",
   "license": "MIT",
   "dependencies": {
+    "es-toolkit": "^1.45.1",
     "mongodb": "^4.8.1"
   },
   "devDependencies": {

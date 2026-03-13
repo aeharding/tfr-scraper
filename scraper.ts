@@ -1,3 +1,4 @@
+import { delay, retry } from "es-toolkit";
 import { setLastRefreshedDate } from "./lastRefreshed";
 import { client } from "./mongodb";
 
@@ -103,30 +104,43 @@ function buildGeometry(geometries: WFSGeometry[]): TFR["geometry"] {
   };
 }
 
+class RateLimitError extends Error {}
+
 async function getTFRDetail(
   notamNumber: string,
   location: string,
   accessToken: string,
 ): Promise<TFR> {
-  const tfrRequest = await fetch(
-    `${nmsApiHost}/nmsapi/v1/notams?${new URLSearchParams({
-      notamNumber,
-      location,
-    })}`,
+  return retry(
+    async () => {
+      const tfrRequest = await fetch(
+        `${nmsApiHost}/nmsapi/v1/notams?${new URLSearchParams({
+          notamNumber,
+          location,
+        })}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            nmsResponseFormat: "GEOJSON",
+          },
+        },
+      );
+
+      if (tfrRequest.status === 429) throw new RateLimitError();
+
+      if (!tfrRequest.ok)
+        throw new Error(`NMS API error: ${tfrRequest.status}`);
+
+      const data = (await tfrRequest.json()) as any;
+
+      return data.data.geojson[0];
+    },
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        nmsResponseFormat: "GEOJSON",
-      },
+      retries: 5,
+      delay: (attempt) => 2 ** attempt * 1_000,
+      shouldRetry: (error) => error instanceof RateLimitError,
     },
   );
-
-  if (!tfrRequest.ok)
-    throw new Error(`NMS API error: ${tfrRequest.status}`);
-
-  const data = (await tfrRequest.json()) as any;
-
-  return data.data.geojson[0];
 }
 
 export default async function () {
@@ -171,8 +185,14 @@ export default async function () {
     ({ notamNumber }) => !alreadyInserted.includes(notamNumber),
   );
 
-  for (const { notamNumber, domesticLocation, geometries } of needsInsertion) {
-    const payload = await getTFRDetail(notamNumber, domesticLocation, accessToken);
+  for (let i = 0; i < needsInsertion.length; i++) {
+    if (i > 0) await delay(200);
+    const { notamNumber, domesticLocation, geometries } = needsInsertion[i];
+    const payload = await getTFRDetail(
+      notamNumber,
+      domesticLocation,
+      accessToken,
+    );
 
     if (!payload) {
       console.log(`Could not find TFR ${notamNumber}`);
