@@ -1,12 +1,32 @@
+import { delay, retry } from "es-toolkit";
 import { setLastRefreshedDate } from "./lastRefreshed";
 import { client } from "./mongodb";
 
 const TFR_WFS_URL =
   "https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=300&outputFormat=application/json";
 
-const faaAPI = "https://external-api.faa.gov/notamapi/v1";
-const client_id = process.env.FAA_API_CLIENT_ID || "";
-const client_secret = process.env.FAA_API_CLIENT_SECRET || "";
+const nmsApiHost = process.env.NMS_API_HOST || "";
+const nmsApiKey = process.env.NMS_API_KEY || "";
+const nmsApiSecret = process.env.NMS_API_SECRET || "";
+
+async function getAccessToken(): Promise<string> {
+  const res = await fetch(`${nmsApiHost}/v1/auth/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${btoa(`${nmsApiKey}:${nmsApiSecret}`)}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`NMS auth failed (${res.status}): ${body}`);
+  }
+
+  const data = (await res.json()) as { access_token: string };
+  return data.access_token;
+}
 
 export interface TFR {
   properties: {
@@ -84,28 +104,50 @@ function buildGeometry(geometries: WFSGeometry[]): TFR["geometry"] {
   };
 }
 
+class RateLimitError extends Error {}
+
 async function getTFRDetail(
   notamNumber: string,
-  domesticLocation: string,
+  location: string,
+  accessToken: string,
 ): Promise<TFR> {
-  const tfrRequest = await fetch(
-    `${faaAPI}/notams?${new URLSearchParams({
-      notamNumber,
-      domesticLocation,
-    })}`,
-    { headers: { client_id, client_secret } },
+  return retry(
+    async () => {
+      const tfrRequest = await fetch(
+        `${nmsApiHost}/nmsapi/v1/notams?${new URLSearchParams({
+          notamNumber,
+          location,
+        })}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            nmsResponseFormat: "GEOJSON",
+          },
+        },
+      );
+
+      if (tfrRequest.status === 429) throw new RateLimitError();
+
+      if (!tfrRequest.ok)
+        throw new Error(`NMS API error: ${tfrRequest.status}`);
+
+      const data = (await tfrRequest.json()) as any;
+
+      return data.data.geojson[0];
+    },
+    {
+      retries: 5,
+      delay: (attempt) => 2 ** attempt * 1_000,
+      shouldRetry: (error) => error instanceof RateLimitError,
+    },
   );
-
-  if (!tfrRequest.ok)
-    throw new Error(`FAA API seems to be down, got ${tfrRequest.status}`);
-
-  const data = (await tfrRequest.json()) as any;
-
-  return data.items[0];
 }
 
 export default async function () {
-  const notams = await fetchTFRs();
+  const [notams, accessToken] = await Promise.all([
+    fetchTFRs(),
+    getAccessToken(),
+  ]);
 
   await client.connect();
 
@@ -143,8 +185,14 @@ export default async function () {
     ({ notamNumber }) => !alreadyInserted.includes(notamNumber),
   );
 
-  for (const { notamNumber, domesticLocation, geometries } of needsInsertion) {
-    const payload = await getTFRDetail(notamNumber, domesticLocation);
+  for (let i = 0; i < needsInsertion.length; i++) {
+    if (i > 0) await delay(200);
+    const { notamNumber, domesticLocation, geometries } = needsInsertion[i];
+    const payload = await getTFRDetail(
+      notamNumber,
+      domesticLocation,
+      accessToken,
+    );
 
     if (!payload) {
       console.log(`Could not find TFR ${notamNumber}`);

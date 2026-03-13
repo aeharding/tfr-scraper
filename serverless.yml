@@ -9,8 +9,9 @@ provider:
     MONGODB_USER: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_USER}
     MONGODB_PASSWORD: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_PASSWORD}
     MONGODB_HOST: ${file(./config.${opt:stage, 'prod'}.json):MONGODB_HOST}
-    FAA_API_CLIENT_ID: ${file(./config.${opt:stage, 'prod'}.json):FAA_API_CLIENT_ID}
-    FAA_API_CLIENT_SECRET: ${file(./config.${opt:stage, 'prod'}.json):FAA_API_CLIENT_SECRET}
+    NMS_API_HOST: ${file(./config.${opt:stage, 'prod'}.json):NMS_API_HOST}
+    NMS_API_KEY: ${file(./config.${opt:stage, 'prod'}.json):NMS_API_KEY}
+    NMS_API_SECRET: ${file(./config.${opt:stage, 'prod'}.json):NMS_API_SECRET}
 
 functions:
   scraper:
